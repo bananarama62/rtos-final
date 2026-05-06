@@ -7,6 +7,7 @@
 const char* ssid = "";
 const char* password = "";
 
+// Stores which temperature profile currently using.
 enum temperature_profile {
   COLD=0,
   MIDDLE=1,
@@ -15,34 +16,41 @@ enum temperature_profile {
   FORCE_OFF=4
 };
 
-enum item_status {
-  OFF,
-  ON
-};
-
-enum item_status motor_status = OFF;
-
-enum temperature_profile current_profile = MIDDLE;
-
+// Stores information about a temperature profile. High value for turning on fan,
+// low value for turning off fan
 struct temperatures {
   int low;
   int high;
 };
 
+// The actual temperature profiles
 const struct temperatures temperature_profiles[] = { 
   { 50, 60 }, // COLD
   { 60, 70 }, // MIDDLE
   { 70, 80 }  // HOT
 };
 
+enum temperature_profile current_profile = MIDDLE; // Just set to middle, since user will change on browser
+
+// Stores the motor's status (on/off)
+enum item_status {
+  OFF,
+  ON
+};
+
+enum item_status motor_status = OFF; // Motor starts off
+
+// I2C addresses for the temperature sensor
 const byte SENSOR_ADDRESS = 0x40;
 const byte TEMP_ADDRESS = 0x00;
 const byte HUMIDITY_ADDRESS = 0x01;
 
-SemaphoreHandle_t xTempSemaphore;
-SemaphoreHandle_t xMotorSemaphore;
+double TEMPERATURE = 0.0; // Current temperature
 
-double TEMPERATURE = 0.0;
+// Semaphores used for adding mutual exclusion
+SemaphoreHandle_t xTempSemaphore; // Setting/reading the temperature
+SemaphoreHandle_t xMotorSemaphore; // Setting/reading whether motor is on or off
+
 
 // Pins for the various motor wires
 int motorPin1 = 14; // Blue
@@ -55,10 +63,9 @@ const int speed_low = 4800;
 const int speed_mid = 2400;
 const int speed_high = 1200;
 int motorSpeed = speed_low; //variable to set stepper speed
-int count = 0; // count of steps made
-int countsperrev = 512; // number of steps per full revolution
 int lookup[8] = {0b1000, 0b1100, 0b0100, 0b0110, 0b0010, 0b0011, 0b0001, 0b1001};
 
+// Writes the values for rotating the stepper motor
 void setOutput(int out) {
   digitalWrite(motorPin1, bitRead(lookup[out], 0));
   digitalWrite(motorPin2, bitRead(lookup[out], 1));
@@ -69,26 +76,31 @@ void setOutput(int out) {
 // Create a web server object
 WebServer server(80);
 
+// Sets profile to Cold
 void HandleProfile1() {
   current_profile = COLD;
   HandleRoot();
 }
 
+// Sets profile to Middle
 void HandleProfile2() {
   current_profile = MIDDLE;
   HandleRoot();
 }
 
+// Sets profile to Hot
 void HandleProfile3() {
   current_profile = HOT;
   HandleRoot();
 }
 
+// Sets profile to Force on
 void HandleForceOn() {
   current_profile = FORCE_ON;
   HandleRoot();
 }
 
+// Sets profile to Force off
 void HandleForceOff() {
   current_profile = FORCE_OFF;
   HandleRoot();
@@ -102,31 +114,37 @@ void HandleRoot() {
   html += ".button { background-color: #4CAF50; border: none; color: white; padding: 16px 40px; text-decoration: none; font-size: 30px; margin: 2px; cursor: pointer;}";
   html += ".button2 { background-color: #555555; }</style></head>";
   html += "<body><h1>ESP32 Web Server</h1>";
+  html += "<p><a href=\"/\">root</a></p>";
 
+  // Buttons for setting to Cold profile
   if (current_profile == COLD) {
     html += "<p><a href=\"/profile1\"><button class=\"button\">COLD</button></a></p>";
   } else {
     html += "<p><a href=\"/profile1\"><button class=\"button button2\">COLD</button></a></p>";
   }
 
+  // Buttons for setting to Middle profile
   if (current_profile == MIDDLE) {
     html += "<p><a href=\"/profile2\"><button class=\"button\">MIDDLE</button></a></p>";
   } else {
     html += "<p><a href=\"/profile2\"><button class=\"button button2\">MIDDLE</button></a></p>";
   }
 
+  // Buttons for setting to Hot profile
   if (current_profile == HOT) {
     html += "<p><a href=\"/profile3\"><button class=\"button\">HOT</button></a></p>";
   } else {
     html += "<p><a href=\"/profile3\"><button class=\"button button2\">HOT</button></a></p>";
   }
 
+  // Buttons for setting to Force On profile
   if (current_profile == FORCE_ON) {
     html += "<p><a href=\"/force_on\"><button class=\"button\">FORCE ON</button></a></p>";
   } else {
     html += "<p><a href=\"/force_on\"><button class=\"button button2\">FORCE ON</button></a></p>";
   }
 
+  // Buttons for setting to Force Off profile
   if (current_profile == FORCE_OFF) {
     html += "<p><a href=\"/force_off\"><button class=\"button\">FORCE OFF</button></a></p>";
   } else {
@@ -138,7 +156,9 @@ void HandleRoot() {
 }
 
 
+// Task for managing the web server
 void TaskServer(void * parameters){
+  // Handles connecting to the wifi network
   Serial.print("Connecting to ");
   Serial.println(ssid);
   WiFi.begin(ssid, password);
@@ -164,12 +184,22 @@ void TaskServer(void * parameters){
   Serial.println("HTTP server started");
   for (;;){
     // Handle incoming client requests
-    //Serial.println("Handle client");
     server.handleClient();
     delay(25);
   }
 }
 
+
+// Used to indicate which I2C address to read from
+// for the temperature sensor
+void IndicateAddress(byte address){
+  Wire.beginTransmission(SENSOR_ADDRESS);
+  Wire.write(address);
+  Wire.endTransmission(SENSOR_ADDRESS);
+}
+
+
+// Periodicaly reads the temperature
 void TaskTemperature(void * parameter){
 
   // Initialize I2C Wire
@@ -184,6 +214,7 @@ void TaskTemperature(void * parameter){
   Wire.endTransmission(SENSOR_ADDRESS);
   delay(1000);
 
+  // Continuously reads temperature
   for(;;){
     
     // Indicate to read temperature
@@ -201,13 +232,14 @@ void TaskTemperature(void * parameter){
       ;
     }
     TEMPERATURE = temp;
-    // Pause between temperature and humidity readings
     xSemaphoreGive(xTempSemaphore);
-    delay(1000);
+    delay(1000); // Reads only every second
   }
 
 }
 
+
+// Task that sets motor state based on temperature
 void TaskTempWatchdog(void * parameter){
   for (;;){
     while ((xSemaphoreTake(xTempSemaphore, portMAX_DELAY) != pdTRUE)){
@@ -219,6 +251,7 @@ void TaskTempWatchdog(void * parameter){
     } else if (current_profile == FORCE_ON) {
       motor_status = ON;
     } else {
+      // Temperature based logic
       if (motor_status == OFF){
         if (TEMPERATURE > temperature_profiles[current_profile].high){
           motor_status = ON;
@@ -234,6 +267,8 @@ void TaskTempWatchdog(void * parameter){
   }
 }
 
+
+// Task for rotating the motor
 void TaskMotor(void * parameter){
   // Declare the motor pins as outputs
   pinMode(motorPin1, OUTPUT);
@@ -251,7 +286,6 @@ void TaskMotor(void * parameter){
     
     xSemaphoreGive(xMotorSemaphore);
     if (spin == ON){
-      //Serial.println(spin);
       // Spins the motor clockwise (counter clockwise when viewed head-on)
       for(int i = 7; i >= 0; i--) {
         setOutput(i);
@@ -262,26 +296,15 @@ void TaskMotor(void * parameter){
   }
 }
 
-void IndicateAddress(byte address){
-  Wire.beginTransmission(SENSOR_ADDRESS);
-  Wire.write(address);
-  Wire.endTransmission(SENSOR_ADDRESS);
-}
 
 void setup() {
   Serial.begin(115200);
-
-  
-  
 
   xTempSemaphore = xSemaphoreCreateBinary();
   xSemaphoreGive(xTempSemaphore);
 
   xMotorSemaphore = xSemaphoreCreateBinary();
   xSemaphoreGive(xMotorSemaphore);
-
-  // Connect to Wi-Fi network
-  
 
   BaseType_t xReturned;
   
@@ -291,7 +314,7 @@ void setup() {
   TaskHandle_t xMotorHandle = NULL;
 
   xReturned = xTaskCreate(
-    TaskServer,    // Function that implements the task. 
+    TaskServer,     // Function that implements the task. 
     "Server",       // Text name for the task. 
     5000,           // Stack size in words, not bytes. 
     NULL,           // Parameter passed into the task. 
@@ -300,34 +323,30 @@ void setup() {
   );   
 
   xReturned = xTaskCreate(
-    TaskTemperature,    // Function that implements the task. 
-    "Temperature",       // Text name for the task. 
-    2000,           // Stack size in words, not bytes. 
-    NULL,           // Parameter passed into the task. 
-    1,              // Priority at which the task is created. 
-    &xTempHandle  // Used to pass out the created task's handle.
+    TaskTemperature, // Function that implements the task. 
+    "Temperature",   // Text name for the task. 
+    2000,            // Stack size in words, not bytes. 
+    NULL,            // Parameter passed into the task. 
+    1,               // Priority at which the task is created. 
+    &xTempHandle     // Used to pass out the created task's handle.
   );   
 
   xReturned = xTaskCreate(
-    TaskTempWatchdog,    // Function that implements the task. 
+    TaskTempWatchdog, // Function that implements the task. 
     "Watchdog",       // Text name for the task. 
-    2000,           // Stack size in words, not bytes. 
-    NULL,           // Parameter passed into the task. 
-    1,              // Priority at which the task is created. 
+    2000,             // Stack size in words, not bytes. 
+    NULL,             // Parameter passed into the task. 
+    1,                // Priority at which the task is created. 
     &xWatchdogHandle  // Used to pass out the created task's handle.
   );   
 
   xReturned = xTaskCreate(
-    TaskMotor,    // Function that implements the task. 
+    TaskMotor,     // Function that implements the task. 
     "Motor",       // Text name for the task. 
-    2000,           // Stack size in words, not bytes. 
-    NULL,           // Parameter passed into the task. 
-    1,              // Priority at which the task is created. 
+    2000,          // Stack size in words, not bytes. 
+    NULL,          // Parameter passed into the task. 
+    1,             // Priority at which the task is created. 
     &xMotorHandle  // Used to pass out the created task's handle.
   );   
 
-}
-
-void loop() {
-  
 }
