@@ -7,7 +7,6 @@
 const char* ssid = "";
 const char* password = "";
 
-
 enum temperature_profile {
   COLD=0,
   MIDDLE=1,
@@ -23,7 +22,7 @@ enum item_status {
 
 enum item_status motor_status = OFF;
 
-enum temperature_profile current_profile = COLD;
+enum temperature_profile current_profile = MIDDLE;
 
 struct temperatures {
   int low;
@@ -191,10 +190,20 @@ void TaskTempWatchdog(void * parameter){
       ;
     }
     Serial.println(TEMPERATURE);
-    if (motor_status == ON){
+    if (current_profile == FORCE_OFF){
       motor_status = OFF;
-    } else {
+    } else if (current_profile == FORCE_ON) {
       motor_status = ON;
+    } else {
+      if (motor_status == OFF){
+        if (TEMPERATURE > temperature_profiles[current_profile].high){
+          motor_status = ON;
+        }
+      } else {
+        if (TEMPERATURE < temperature_profiles[current_profile].low){
+          motor_status = OFF;
+        }
+      }
     }
     xSemaphoreGive(xTempSemaphore);
     delay(1000);
