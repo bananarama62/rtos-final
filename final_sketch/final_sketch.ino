@@ -76,10 +76,8 @@ void HandleRoot() {
   server.send(200, "text/html", html);
 }
 
-void setup() {
-  Serial.begin(115200);
 
-  // Connect to Wi-Fi network
+void TaskServer(void * parameters){
   Serial.print("Connecting to ");
   Serial.println(ssid);
   WiFi.begin(ssid, password);
@@ -101,9 +99,34 @@ void setup() {
   // Start the web server
   server.begin();
   Serial.println("HTTP server started");
+  for (;;){
+    // Handle incoming client requests
+    //Serial.println("Handle client");
+    server.handleClient();
+    delay(25);
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  // Connect to Wi-Fi network
+  
+
+  BaseType_t xReturned;
+  
+  TaskHandle_t xServerHandle = NULL;
+  xReturned = xTaskCreate(
+    TaskServer,    // Function that implements the task. 
+    "Server",       // Text name for the task. 
+    5000,           // Stack size in words, not bytes. 
+    NULL,           // Parameter passed into the task. 
+    1,              // Priority at which the task is created. 
+    &xServerHandle  // Used to pass out the created task's handle.
+  );   
+
 }
 
 void loop() {
-  // Handle incoming client requests
-  server.handleClient();
+  
 }
