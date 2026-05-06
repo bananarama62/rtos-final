@@ -2,48 +2,51 @@
 #include <WebServer.h>
 
 // Replace with your network credentials
-const char* ssid = "REPLACE_WITH_YOUR_SSID";
-const char* password = "REPLACE_WITH_YOUR_PASSWORD";
 
-// Assign output variables to GPIO pins
-const int output26 = 26;
-const int output27 = 27;
-String output26State = "off";
-String output27State = "off";
+const char* ssid = "";
+const char* password = "";
+
+enum temperature_profile {
+  COLD=0,
+  MIDDLE=1,
+  HOT=2,
+  FORCE_ON=3,
+  FORCE_OFF=4
+};
+
+enum temperature_profile current_profile = COLD;
+
+struct temperatures {
+  int low;
+  int high;
+};
+
+const struct temperatures temperature_profiles[] = { 
+  { 50, 60 }, // COLD
+  { 60, 70 }, // MIDDLE
+  { 70, 80 }  // HOT
+};
 
 // Create a web server object
 WebServer server(80);
 
-// Function to handle turning GPIO 26 on
-void handleGPIO26On() {
-  output26State = "on";
-  digitalWrite(output26, HIGH);
-  handleRoot();
+void HandleProfile1() {
+  current_profile = COLD;
+  HandleRoot();
 }
 
-// Function to handle turning GPIO 26 off
-void handleGPIO26Off() {
-  output26State = "off";
-  digitalWrite(output26, LOW);
-  handleRoot();
+void HandleProfile2() {
+  current_profile = MIDDLE;
+  HandleRoot();
 }
 
-// Function to handle turning GPIO 27 on
-void handleGPIO27On() {
-  output27State = "on";
-  digitalWrite(output27, HIGH);
-  handleRoot();
-}
-
-// Function to handle turning GPIO 27 off
-void handleGPIO27Off() {
-  output27State = "off";
-  digitalWrite(output27, LOW);
-  handleRoot();
+void HandleProfile3() {
+  current_profile = HOT;
+  HandleRoot();
 }
 
 // Function to handle the root URL and show the current states
-void handleRoot() {
+void HandleRoot() {
   String html = "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">";
   html += "<link rel=\"icon\" href=\"data:,\">";
   html += "<style>html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;}";
@@ -51,20 +54,22 @@ void handleRoot() {
   html += ".button2 { background-color: #555555; }</style></head>";
   html += "<body><h1>ESP32 Web Server</h1>";
 
-  // Display GPIO 26 controls
-  html += "<p>GPIO 26 - State " + output26State + "</p>";
-  if (output26State == "off") {
-    html += "<p><a href=\"/26/on\"><button class=\"button\">ON</button></a></p>";
+  if (current_profile == COLD) {
+    html += "<p><a href=\"/profile1\"><button class=\"button\">COLD</button></a></p>";
   } else {
-    html += "<p><a href=\"/26/off\"><button class=\"button button2\">OFF</button></a></p>";
+    html += "<p><a href=\"/profile1\"><button class=\"button button2\">COLD</button></a></p>";
   }
 
-  // Display GPIO 27 controls
-  html += "<p>GPIO 27 - State " + output27State + "</p>";
-  if (output27State == "off") {
-    html += "<p><a href=\"/27/on\"><button class=\"button\">ON</button></a></p>";
+  if (current_profile == MIDDLE) {
+    html += "<p><a href=\"/profile2\"><button class=\"button\">MIDDLE</button></a></p>";
   } else {
-    html += "<p><a href=\"/27/off\"><button class=\"button button2\">OFF</button></a></p>";
+    html += "<p><a href=\"/profile2\"><button class=\"button button2\">MIDDLE</button></a></p>";
+  }
+
+  if (current_profile == HOT) {
+    html += "<p><a href=\"/profile3\"><button class=\"button\">HOT</button></a></p>";
+  } else {
+    html += "<p><a href=\"/profile3\"><button class=\"button button2\">HOT</button></a></p>";
   }
 
   html += "</body></html>";
@@ -73,13 +78,6 @@ void handleRoot() {
 
 void setup() {
   Serial.begin(115200);
-
-  // Initialize the output variables as outputs
-  pinMode(output26, OUTPUT);
-  pinMode(output27, OUTPUT);
-  // Set outputs to LOW
-  digitalWrite(output26, LOW);
-  digitalWrite(output27, LOW);
 
   // Connect to Wi-Fi network
   Serial.print("Connecting to ");
@@ -95,11 +93,10 @@ void setup() {
   Serial.println(WiFi.localIP());
 
   // Set up the web server to handle different routes
-  server.on("/", handleRoot);
-  server.on("/26/on", handleGPIO26On);
-  server.on("/26/off", handleGPIO26Off);
-  server.on("/27/on", handleGPIO27On);
-  server.on("/27/off", handleGPIO27Off);
+  server.on("/", HandleRoot);
+  server.on("/profile1", HandleProfile1);
+  server.on("/profile2", HandleProfile2);
+  server.on("/profile3", HandleProfile3);
 
   // Start the web server
   server.begin();
