@@ -84,6 +84,16 @@ void HandleProfile3() {
   HandleRoot();
 }
 
+void HandleForceOn() {
+  current_profile = FORCE_ON;
+  HandleRoot();
+}
+
+void HandleForceOff() {
+  current_profile = FORCE_OFF;
+  HandleRoot();
+}
+
 // Function to handle the root URL and show the current states
 void HandleRoot() {
   String html = "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">";
@@ -111,6 +121,18 @@ void HandleRoot() {
     html += "<p><a href=\"/profile3\"><button class=\"button button2\">HOT</button></a></p>";
   }
 
+  if (current_profile == FORCE_ON) {
+    html += "<p><a href=\"/force_on\"><button class=\"button\">FORCE ON</button></a></p>";
+  } else {
+    html += "<p><a href=\"/force_on\"><button class=\"button button2\">FORCE ON</button></a></p>";
+  }
+
+  if (current_profile == FORCE_OFF) {
+    html += "<p><a href=\"/force_off\"><button class=\"button\">FORCE OFF</button></a></p>";
+  } else {
+    html += "<p><a href=\"/force_off\"><button class=\"button button2\">FORCE OFF</button></a></p>";
+  }
+
   html += "</body></html>";
   server.send(200, "text/html", html);
 }
@@ -134,6 +156,8 @@ void TaskServer(void * parameters){
   server.on("/profile1", HandleProfile1);
   server.on("/profile2", HandleProfile2);
   server.on("/profile3", HandleProfile3);
+  server.on("/force_on", HandleForceOn);
+  server.on("/force_off", HandleForceOff);
 
   // Start the web server
   server.begin();
