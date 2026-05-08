@@ -2,6 +2,7 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <Wire.h>
+#include <ctime>
 
 // Replace with your network credentials
 const char* ssid = "";
@@ -27,8 +28,10 @@ struct temperatures {
 const struct temperatures temperature_profiles[] = { 
   { 50, 60 }, // COLD
   { 60, 70 }, // MIDDLE
-  { 70, 80 }  // HOT
+  { 75, 80 }  // HOT
 };
+
+const String profile_names[] { "COLD", "MIDDLE", "HOT" };
 
 enum temperature_profile current_profile = MIDDLE; // Just set to middle, since user will change on browser
 
@@ -62,7 +65,7 @@ int motorPin4 = 18; // Orange
 const int speed_low = 4800;
 const int speed_mid = 2400;
 const int speed_high = 1200;
-int motorSpeed = speed_low; //variable to set stepper speed
+int motorSpeed = speed_high; //variable to set stepper speed
 int lookup[8] = {0b1000, 0b1100, 0b0100, 0b0110, 0b0010, 0b0011, 0b0001, 0b1001};
 
 // Writes the values for rotating the stepper motor
@@ -76,34 +79,47 @@ void setOutput(int out) {
 // Create a web server object
 WebServer server(80);
 
+void RedirectToRoot(){
+  String html = "<!DOCTYPE html><html><head><meta http-equiv=\"refresh\" content=\"0; url=/\" /><body><p><a href=\"/\">Redirect should occur automatically. Click here if it doesn\'t</a></p></body></html>";
+  server.send(200, "text/html", html);
+}
+
 // Sets profile to Cold
 void HandleProfile1() {
   current_profile = COLD;
-  HandleRoot();
+  RedirectToRoot();
 }
 
 // Sets profile to Middle
 void HandleProfile2() {
   current_profile = MIDDLE;
-  HandleRoot();
+  RedirectToRoot();
 }
 
 // Sets profile to Hot
 void HandleProfile3() {
   current_profile = HOT;
-  HandleRoot();
+  RedirectToRoot();
 }
 
 // Sets profile to Force on
 void HandleForceOn() {
   current_profile = FORCE_ON;
-  HandleRoot();
+  RedirectToRoot();
 }
 
 // Sets profile to Force off
 void HandleForceOff() {
   current_profile = FORCE_OFF;
-  HandleRoot();
+  RedirectToRoot();
+}
+
+void ButtonHTML(String* output, enum temperature_profile profile){
+
+}
+
+String ProfileInfo(enum temperature_profile profile){
+  return "<p>Profile: " + profile_names[profile] + ". On at " + temperature_profiles[profile].high + ". Off at " + temperature_profiles[profile].low + "</p>";
 }
 
 // Function to handle the root URL and show the current states
@@ -115,6 +131,37 @@ void HandleRoot() {
   html += ".button2 { background-color: #555555; }</style></head>";
   html += "<body><h1>ESP32 Web Server</h1>";
   html += "<p><a href=\"/\">root</a></p>";
+
+  // Fetch current temperature
+  double temp = -1.0;
+  while ((xSemaphoreTake(xTempSemaphore, portMAX_DELAY) != pdTRUE)){
+    ;
+  }
+  temp = TEMPERATURE;
+  xSemaphoreGive(xTempSemaphore);
+
+  time_t timestamp = time(NULL); // Current time
+
+  html = html + "<p>Current Temperature: " + String(temp,2) + " degrees Fahrenheit</p>";
+  html = html + "<p>Uptime: " + timestamp + " seconds</p>";
+
+  html += ProfileInfo(COLD);
+  html += ProfileInfo(MIDDLE);
+  html += ProfileInfo(HOT);
+
+  // Fan status
+  html += "<p>Fan is currently: ";
+  while ((xSemaphoreTake(xMotorSemaphore, portMAX_DELAY) != pdTRUE)){
+    ;
+  }
+  if (motor_status == ON){
+    html += "ON";
+  } else {
+    html += "OFF";
+  }
+  xSemaphoreGive(xMotorSemaphore);
+  html += ".</p>";
+  
 
   // Buttons for setting to Cold profile
   if (current_profile == COLD) {
@@ -241,11 +288,17 @@ void TaskTemperature(void * parameter){
 
 // Task that sets motor state based on temperature
 void TaskTempWatchdog(void * parameter){
+  double temp = 0.0;
   for (;;){
     while ((xSemaphoreTake(xTempSemaphore, portMAX_DELAY) != pdTRUE)){
       ;
     }
-    Serial.println(TEMPERATURE);
+    temp = TEMPERATURE;
+    xSemaphoreGive(xTempSemaphore);
+    Serial.println(temp);
+    while ((xSemaphoreTake(xMotorSemaphore, portMAX_DELAY) != pdTRUE)){
+      ;
+    }
     if (current_profile == FORCE_OFF){
       motor_status = OFF;
     } else if (current_profile == FORCE_ON) {
@@ -262,7 +315,7 @@ void TaskTempWatchdog(void * parameter){
         }
       }
     }
-    xSemaphoreGive(xTempSemaphore);
+    xSemaphoreGive(xMotorSemaphore);
     delay(1000);
   }
 }
@@ -348,5 +401,9 @@ void setup() {
     1,             // Priority at which the task is created. 
     &xMotorHandle  // Used to pass out the created task's handle.
   );   
+
+}
+
+void loop() {
 
 }
